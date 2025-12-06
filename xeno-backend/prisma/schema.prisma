@@ -1,0 +1,170 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Tenant {
+  id            String   @id @default(uuid())
+  name          String
+  shopifyDomain String   @unique
+  accessToken   String?
+  apiKey        String?
+  apiSecret     String?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  users       User[]
+  customers   Customer[]
+  products    Product[]
+  orders      Order[]
+
+  events      Event[]
+  locations   Location[]
+  inventoryLevels InventoryLevel[]
+}
+
+model Location {
+  id             String   @id @default(uuid())
+  shopifyLocationId String
+  name           String
+  address1       String?
+  city           String?
+  zip            String?
+  country        String?
+  province       String?
+  
+  tenantId       String
+  tenant         Tenant   @relation(fields: [tenantId], references: [id])
+  
+  inventoryLevels InventoryLevel[]
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([tenantId, shopifyLocationId])
+}
+
+model InventoryLevel {
+  id             String   @id @default(uuid())
+  shopifyInventoryItemId String
+  available      Int
+  
+  locationId     String
+  location       Location @relation(fields: [locationId], references: [id])
+  
+  // Optional link to product if we map inventory_item_id to variant -> product
+  // but for now keeping it simple as a data point
+  
+  tenantId       String
+  tenant         Tenant   @relation(fields: [tenantId], references: [id])
+
+  updatedAt      DateTime @updatedAt
+
+  @@unique([tenantId, locationId, shopifyInventoryItemId])
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  firstName    String?
+  lastName     String?
+  passwordHash String
+  role         String   @default("USER")
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Customer {
+  id                String   @id @default(uuid())
+  shopifyCustomerId String // Unique per tenant, enforced by compound index
+  email             String?
+  firstName         String?
+  lastName          String?
+  phone             String?
+  totalSpent        Decimal  @default(0.0)
+  addresses         String?  // JSON string of addresses
+  currency          String   @default("USD")
+  tags              String?
+  
+  tenantId          String
+  tenant            Tenant   @relation(fields: [tenantId], references: [id])
+  orders            Order[]
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([tenantId, shopifyCustomerId])
+}
+
+model Product {
+  id               String      @id @default(uuid())
+  shopifyProductId String // Unique per tenant
+  title            String
+  bodyHtml         String?
+  vendor           String?
+  productType      String?
+  price            Decimal
+  inventory        Int         @default(0)
+  images           String?     // JSON string of image URLs
+  tags             String?
+  
+  tenantId         String
+  tenant           Tenant      @relation(fields: [tenantId], references: [id])
+  orderItems       OrderItem[]
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  @@unique([tenantId, shopifyProductId])
+}
+
+model Order {
+  id             String      @id @default(uuid())
+  shopifyOrderId String // Unique per tenant
+  totalPrice     Decimal
+  orderDate      DateTime
+  customerId     String?
+  customer       Customer?   @relation(fields: [customerId], references: [id])
+  
+  status         String      @default("open")
+  financialStatus   String?
+  fulfillmentStatus String?
+  currency          String   @default("USD")
+  tags              String?
+  
+  tenantId       String
+  tenant         Tenant      @relation(fields: [tenantId], references: [id])
+  orderItems     OrderItem[]
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  @@unique([tenantId, shopifyOrderId])
+}
+
+
+
+model OrderItem {
+  id        String  @id @default(uuid())
+  orderId   String
+  order     Order   @relation(fields: [orderId], references: [id])
+  productId String?
+  product   Product? @relation(fields: [productId], references: [id])
+  title     String? // Fallback if product deleted
+  quantity  Int
+  price     Decimal
+}
+
+model Event {
+  id        String   @id @default(uuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  type      String   // e.g., 'CART_ABANDONED', 'CHECKOUT_STARTED'
+  payload   String   // JSON string
+  createdAt DateTime @default(now())
+}
