@@ -126,230 +126,218 @@ const getTopCustomers = async (req, res) => {
     }
 };
 
-where.orderDate = {
-    const getRevenueTrend = async (req, res) => {
-        try {
-            const tenantId = req.tenantId;
-            const { startDate, endDate } = req.query;
+const getRevenueTrend = async (req, res) => {
+    try {
+        const tenantId = req.tenantId;
+        const { startDate, endDate } = req.query;
 
-            // Mock Data REMOVED - using real DB
+        const where = { tenantId };
 
-            const where = { tenantId };
+        if (startDate && endDate && startDate !== 'undefined' && startDate !== '') {
+            const end = new Date(endDate);
+            end.setHours(23, 59, 59, 999);
 
-            if (startDate && endDate && startDate !== 'undefined' && startDate !== '') {
-                const end = new Date(endDate);
-                end.setHours(23, 59, 59, 999);
+            where.orderDate = {
+                gte: new Date(startDate),
+                lte: end
+            };
+        }
 
-                where.orderDate = {
-                    gte: new Date(startDate),
-                    lte: end
-                };
+        const orders = await prisma.order.findMany({
+            where,
+            orderBy: { orderDate: 'asc' }
+        });
+
+        const isSingleDay = startDate && endDate && startDate === endDate;
+
+        // Simple aggregation
+        const trendMap = {};
+
+        if (isSingleDay) {
+            // Initialize all 24 hours with 0
+            for (let i = 0; i < 24; i++) {
+                const hour = i.toString().padStart(2, '0') + ':00';
+                trendMap[hour] = 0;
             }
 
-            const orders = await prisma.order.findMany({
-                where,
-                orderBy: { orderDate: 'asc' }
+            orders.forEach(order => {
+                const d = new Date(order.orderDate);
+                const hour = d.getHours().toString().padStart(2, '0') + ':00';
+                trendMap[hour] = (trendMap[hour] || 0) + Number(order.totalPrice);
             });
+        } else {
+            orders.forEach(order => {
+                const date = new Date(order.orderDate).toISOString().split('T')[0];
+                trendMap[date] = (trendMap[date] || 0) + Number(order.totalPrice);
+            });
+        }
 
-            const isSingleDay = startDate && endDate && startDate === endDate;
+        const trend = Object.keys(trendMap).map(key => ({
+            date: key,
+            revenue: trendMap[key]
+        }));
 
-            // Simple aggregation
-            const trendMap = {};
+        res.json(trend);
+    } catch (error) {
+        console.error('Get Revenue Trend Error:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
 
-            if (isSingleDay) {
-                // Initialize all 24 hours with 0
-                for (let i = 0; i < 24; i++) {
-                    const hour = i.toString().padStart(2, '0') + ':00';
-                    trendMap[hour] = 0;
+const getRecentEvents = async (req, res) => {
+    try {
+        const tenantId = req.tenantId;
+
+        // 1. Fetch recent Orders
+        const recentOrders = await prisma.order.findMany({
+            where: { tenantId },
+            include: { customer: true },
+            orderBy: { orderDate: 'desc' },
+            take: 5
+        });
+
+        // 2. Fetch recent Customers
+        const recentCustomers = await prisma.customer.findMany({
+            where: { tenantId },
+            orderBy: { createdAt: 'desc' },
+            take: 5
+        });
+
+        // 3. Combine and Format
+        const activities = [
+            ...recentOrders.map(o => ({
+                id: `order_${o.id}`,
+                type: 'ORDER_PLACED',
+                message: `Order #${o.shopifyOrderId} placed by ${o.customer ? o.customer.firstName : 'Guest'}`,
+                amount: Number(o.totalPrice),
+                date: o.orderDate
+            })),
+            ...recentCustomers.map(c => ({
+                id: `cust_${c.id}`,
+                type: 'NEW_CUSTOMER',
+                message: `New customer joined: ${c.firstName} ${c.lastName}`,
+                amount: null,
+                date: c.createdAt
+            }))
+        ];
+
+        // 4. Sort by Date Descending
+        activities.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+        // 5. take top 10
+        res.json(activities.slice(0, 10));
+
+    } catch (error) {
+        console.error('Get Recent Events Error:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+const getAllCustomers = async (req, res) => {
+    try {
+        const tenantId = req.tenantId;
+        const customers = await prisma.customer.findMany({
+            where: { tenantId },
+            include: {
+                orders: {
+                    include: {
+                        orderItems: true
+                    },
+                    orderBy: { orderDate: 'desc' }
                 }
+            },
+            orderBy: { totalSpent: 'desc' }
+        });
 
-                orders.forEach(order => {
-                    const d = new Date(order.orderDate);
-                    const hour = d.getHours().toString().padStart(2, '0') + ':00';
-                    trendMap[hour] = (trendMap[hour] || 0) + Number(order.totalPrice);
-                });
-            } else {
-                orders.forEach(order => {
-                    const date = new Date(order.orderDate).toISOString().split('T')[0];
-                    trendMap[date] = (trendMap[date] || 0) + Number(order.totalPrice);
-                });
-            }
+        res.json(customers);
+    } catch (error) {
+        console.error('Get All Customers Error:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
 
-            const trend = Object.keys(trendMap).map(key => ({
-                date: key,
-                revenue: trendMap[key]
-            }));
+const getOrders = async (req, res) => {
+    try {
+        const tenantId = req.tenantId;
+        const { startDate, endDate } = req.query;
 
-            res.json(trend);
-        } catch (error) {
-            console.error('Get Revenue Trend Error:', error);
-            res.status(500).json({ message: 'Server error' });
+        const where = { tenantId };
+
+        if (startDate && endDate && startDate !== 'undefined' && startDate !== '') {
+            const end = new Date(endDate);
+            end.setHours(23, 59, 59, 999);
+
+            where.orderDate = {
+                gte: new Date(startDate),
+                lte: end
+            };
         }
-    };
 
-    const getRecentEvents = async (req, res) => {
-        try {
-            const tenantId = req.tenantId;
+        // Fetch confirmed orders
+        const orders = await prisma.order.findMany({
+            where,
+            include: { customer: true, orderItems: { include: { product: true } } },
+            orderBy: { orderDate: 'desc' }
+        });
 
-            // 1. Fetch recent Orders
-            const recentOrders = await prisma.order.findMany({
-                where: { tenantId },
-                include: { customer: true },
-                orderBy: { orderDate: 'desc' },
-                take: 5
-            });
+        res.json(orders);
+    } catch (error) {
+        console.error('Get Orders Error:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
 
-            // 2. Fetch recent Customers
-            const recentCustomers = await prisma.customer.findMany({
-                where: { tenantId },
-                orderBy: { createdAt: 'desc' },
-                take: 5
-            });
+const triggerSync = async (req, res) => {
+    try {
+        const userId = req.user.userId;
+        const user = await prisma.user.findUnique({ where: { id: userId } });
+        if (!user) return res.status(404).json({ error: 'User not found' });
 
-            // 3. Combine and Format
-            const activities = [
-                ...recentOrders.map(o => ({
-                    id: `order_${o.id}`,
-                    type: 'ORDER_PLACED',
-                    message: `Order #${o.shopifyOrderId} placed by ${o.customer ? o.customer.firstName : 'Guest'}`,
-                    amount: Number(o.totalPrice),
-                    date: o.orderDate
-                })),
-                ...recentCustomers.map(c => ({
-                    id: `cust_${c.id}`,
-                    type: 'NEW_CUSTOMER',
-                    message: `New customer joined: ${c.firstName} ${c.lastName}`,
-                    amount: null,
-                    date: c.createdAt
-                }))
-            ];
+        const result = await syncTenant(user.tenantId);
 
-            // 4. Sort by Date Descending
-            activities.sort((a, b) => new Date(b.date) - new Date(a.date));
+        res.json({ message: result.message });
+    } catch (error) {
+        console.error('Sync Error:', error);
+        res.status(500).json({ error: 'Sync failed', details: error.message });
+    }
+};
 
-            // 5. take top 10
-            res.json(activities.slice(0, 10));
+const getNotifications = async (req, res) => {
+    try {
+        const tenantId = req.tenantId;
+        // Interpret "Notifications" as the 5 most recent orders
+        const recentOrders = await prisma.order.findMany({
+            where: { tenantId },
+            include: { customer: true },
+            orderBy: { orderDate: 'desc' },
+            take: 5
+        });
 
-        } catch (error) {
-            console.error('Get Recent Events Error:', error);
-            res.status(500).json({ message: 'Server error' });
-        }
-    };
+        const notifications = recentOrders.map(order => ({
+            id: order.id,
+            title: 'New Order Received',
+            message: `Order #${order.shopifyOrderId} from ${order.customer ? order.customer.firstName : 'Guest'} - $${Number(order.totalPrice).toFixed(2)}`,
+            time: order.orderDate, // Frontend can format this relative time
+            read: false, // Dummy read status
+            type: 'order'
+        }));
 
-    const getAllCustomers = async (req, res) => {
-        try {
-            const tenantId = req.tenantId;
-            const customers = await prisma.customer.findMany({
-                where: { tenantId },
-                include: {
-                    orders: {
-                        include: {
-                            orderItems: true
-                        },
-                        orderBy: { orderDate: 'desc' }
-                    }
-                },
-                orderBy: { totalSpent: 'desc' }
-            });
+        res.json(notifications);
+    } catch (error) {
+        console.error('Get Notifications Error:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
 
-            const russell = customers.find(c => c.firstName === 'Russell');
-            if (russell) {
-                console.log('API RESPONSE DEBUG: Russell Orders:', russell.orders ? russell.orders.length : 'MISSING');
-            } else {
-                console.log('API RESPONSE DEBUG: Russell NOT FOUND');
-            }
-
-            res.json(customers);
-        } catch (error) {
-            console.error('Get All Customers Error:', error);
-            res.status(500).json({ message: 'Server error' });
-        }
-    };
-
-    const getOrders = async (req, res) => {
-        try {
-            const tenantId = req.tenantId;
-            const { startDate, endDate } = req.query;
-
-            const where = { tenantId };
-
-            if (startDate && endDate && startDate !== 'undefined' && startDate !== '') {
-                const end = new Date(endDate);
-                end.setHours(23, 59, 59, 999);
-
-                where.orderDate = {
-                    gte: new Date(startDate),
-                    lte: end
-                };
-            }
-
-            // Fetch confirmed orders
-            const orders = await prisma.order.findMany({
-                where,
-                include: { customer: true, orderItems: { include: { product: true } } },
-                orderBy: { orderDate: 'desc' }
-            });
-
-            res.json(orders);
-        } catch (error) {
-            console.error('Get Orders Error:', error);
-            res.status(500).json({ message: 'Server error' });
-        }
-    };
-
-
-
-    const triggerSync = async (req, res) => {
-        try {
-            const userId = req.user.userId;
-            const user = await prisma.user.findUnique({ where: { id: userId } });
-            if (!user) return res.status(404).json({ error: 'User not found' });
-
-            const result = await syncTenant(user.tenantId);
-
-            res.json({ message: result.message });
-        } catch (error) {
-            console.error('Sync Error:', error);
-            res.status(500).json({ error: 'Sync failed', details: error.message });
-        }
-    };
-
-    const getNotifications = async (req, res) => {
-        try {
-            const tenantId = req.tenantId;
-            // Interpret "Notifications" as the 5 most recent orders
-            const recentOrders = await prisma.order.findMany({
-                where: { tenantId },
-                include: { customer: true },
-                orderBy: { orderDate: 'desc' },
-                take: 5
-            });
-
-            const notifications = recentOrders.map(order => ({
-                id: order.id,
-                title: 'New Order Received',
-                message: `Order #${order.shopifyOrderId} from ${order.customer ? order.customer.firstName : 'Guest'} - $${Number(order.totalPrice).toFixed(2)}`,
-                time: order.orderDate, // Frontend can format this relative time
-                read: false, // Dummy read status
-                type: 'order'
-            }));
-
-            res.json(notifications);
-        } catch (error) {
-            console.error('Get Notifications Error:', error);
-            res.status(500).json({ message: 'Server error' });
-        }
-    };
-
-    module.exports = {
-        getOverview,
-        getTopCustomers,
-        getRevenueTrend,
-        getRecentEvents,
-        getOrders,
-        getProducts,
-        getAllCustomers,
-        getProductDetails,
-        triggerSync,
-        getNotifications
-    };
+module.exports = {
+    getOverview,
+    getTopCustomers,
+    getRevenueTrend,
+    getRecentEvents,
+    getOrders,
+    getProducts,
+    getAllCustomers,
+    getProductDetails,
+    triggerSync,
+    getNotifications
+};
