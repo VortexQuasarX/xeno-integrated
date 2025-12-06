@@ -10,37 +10,11 @@ const authMiddleware = async (req, res, next) => {
 
         const token = authHeader.split(' ')[1];
 
-        // Emergency Frontend Bypass Token Support
-        if (token === 'demo-token-bypass') {
-            req.user = {
-                id: 'demo-user-id',
-                email: 'demo@xeno.com',
-                tenantId: 'demo-tenant-id',
-                role: 'ADMIN',
-                tenant: { id: 'demo-tenant-id', isActive: true, name: 'Xeno Demo Store' }
-            };
-            req.tenantId = 'demo-tenant-id';
-            return next();
-        }
+        // Emergency Frontend Bypass Token Support - REMOVED
 
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-        // Demo User Bypass
-        if (decoded.userId === 'demo-user-id') {
-            req.user = {
-                id: 'demo-user-id',
-                email: 'demo@xeno.com',
-                tenantId: 'demo-tenant-id',
-                role: 'ADMIN',
-                tenant: {
-                    id: 'demo-tenant-id',
-                    isActive: true,
-                    name: 'Xeno Demo Store'
-                }
-            };
-            req.tenantId = 'demo-tenant-id';
-            return next();
-        }
+        // Demo User Bypass - REMOVED
 
         const user = await prisma.user.findUnique({
             where: { id: decoded.userId },
