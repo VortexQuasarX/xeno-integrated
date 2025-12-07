@@ -76,8 +76,21 @@ const login = async (req, res) => {
             return res.status(400).json({ message: 'Email and password are required' });
         }
 
-        // Demo User Bypass - REMOVED for specific snapshot db usage
-        // Authentication will now proceed against the actual database file
+        // Demo User Bypass - Restored for Guaranteed Snapshot Availability
+        if (email === 'demo@xeno.com' && password === 'password123') {
+            const token = 'demo-token-bypass'; // Special token for frontend bypass
+            return res.status(200).json({
+                message: 'Login successful (Demo Mode)',
+                token,
+                user: {
+                    id: 'demo-user-id',
+                    email: 'demo@xeno.com',
+                    tenantId: 'demo-tenant-id',
+                    firstName: 'Demo',
+                    lastName: 'User'
+                }
+            });
+        }
 
         const user = await prisma.user.findUnique({
             where: { email },
