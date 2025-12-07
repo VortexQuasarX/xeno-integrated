@@ -52,7 +52,9 @@ export default function Dashboard() {
             try {
                 // Mock Data Override for Demo User
                 // This ensures deterministic "Snapshot" data even if Vercel filesystem is cold
+                console.log('Checking Token for Bypass:', token);
                 if (token === 'demo-token-bypass') {
+                    console.log('Frontend Bypass ACTIVE');
                     setOverview({
                         totalCustomers: 4,
                         totalOrders: 5,
@@ -168,7 +170,7 @@ export default function Dashboard() {
                 <main className="flex-1 py-8">
                     <div className="px-4 sm:px-6 lg:px-8">
                         <div className="mb-8">
-                            <h1 className="text-2xl font-bold text-slate-900">Dashboard Overview</h1>
+                            <h1 className="text-2xl font-bold text-slate-900">Dashboard Overview (V2)</h1>
                             <p className="mt-1 text-sm text-slate-500">
                                 Track your store's performance and customer insights.
                             </p>
